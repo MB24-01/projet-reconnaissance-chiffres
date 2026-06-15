@@ -4,13 +4,17 @@ from PIL import Image, ImageDraw
 import numpy as np
 import tensorflow as tf
 
-model = tf.keras.models.load_model("mnist_model.keras")
+# Charger les deux modèles
+model_digits = tf.keras.models.load_model("mnist_model.keras")
+model_letters = tf.keras.models.load_model("letters_model.keras")
+
+letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
 app = ctk.CTk()
-app.title("Reconnaissance de chiffres par IA")
+app.title("Reconnaissance de chiffres et lettres par IA")
 app.geometry("1000x750")
 app.resizable(False, False)
 
@@ -26,31 +30,69 @@ def dessiner(event):
     canvas.create_oval(x-r, y-r, x+r, y+r, fill="white", outline="white")
     draw.ellipse([x-r, y-r, x+r, y+r], fill=255)
 
+def preparer_image(img):
+    bbox = img.getbbox()
+
+    if bbox is None:
+        return Image.new("L", (28, 28), 0)
+
+    img = img.crop(bbox)
+    w, h = img.size
+
+    if w > h:
+        new_w = 20
+        new_h = int(h * 20 / w)
+    else:
+        new_h = 20
+        new_w = int(w * 20 / h)
+
+    img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+
+    new_img = Image.new("L", (28, 28), 0)
+    left = (28 - new_w) // 2
+    top = (28 - new_h) // 2
+    new_img.paste(img, (left, top))
+
+    return new_img
+
 def reconnaitre():
-    img = image.resize((28, 28))
+    img = preparer_image(image)
+
     img_array = np.array(img) / 255.0
     img_array = img_array.reshape(1, 28, 28, 1)
 
-    prediction = model.predict(img_array, verbose=0)
-    chiffre = int(np.argmax(prediction))
-    confiance = float(np.max(prediction) * 100)
+    # Prédiction chiffre
+    pred_digit = model_digits.predict(img_array, verbose=0)
+    digit = int(np.argmax(pred_digit))
+    conf_digit = float(np.max(pred_digit) * 100)
+
+    # Prédiction lettre
+    pred_letter = model_letters.predict(img_array, verbose=0)
+    letter_index = int(np.argmax(pred_letter))
+    letter = letters[letter_index]
+    conf_letter = float(np.max(pred_letter) * 100)
 
     img.save("dernier_test.png")
 
-    if confiance < 70:
-        label_resultat.configure(text="?")
-        label_message.configure(text="Symbole non reconnu")
-        label_confiance.configure(text=f"Confiance : {confiance:.2f}%")
+    # Comparaison des confiances
+    if conf_digit >= conf_letter:
+        resultat = str(digit)
+        confiance = conf_digit
+        message = "Chiffre reconnu"
     else:
-        label_resultat.configure(text=str(chiffre))
-        label_message.configure(text="Chiffre reconnu")
-        label_confiance.configure(text=f"Confiance : {confiance:.2f}%")
+        resultat = letter
+        confiance = conf_letter
+        message = "Lettre reconnue"
+
+    label_resultat.configure(text=resultat)
+    label_message.configure(text=message)
+    label_confiance.configure(text=f"Confiance : {confiance:.2f}%")
 
 def effacer():
     canvas.delete("all")
     draw.rectangle([0, 0, canvas_width, canvas_height], fill=0)
     label_resultat.configure(text="-")
-    label_message.configure(text="Dessinez un chiffre de 0 à 9")
+    label_message.configure(text="Dessinez un chiffre ou une lettre")
     label_confiance.configure(text="Confiance : -")
 
 header = ctk.CTkFrame(app, height=90, corner_radius=0)
@@ -58,14 +100,14 @@ header.pack(fill="x")
 
 title = ctk.CTkLabel(
     header,
-    text="Reconnaissance automatique des chiffres manuscrits",
+    text="Reconnaissance automatique de caractères manuscrits",
     font=("Arial", 28, "bold")
 )
 title.pack(pady=(18, 5))
 
 subtitle = ctk.CTkLabel(
     header,
-    text="Projet IA - Réseau de neurones CNN entraîné sur MNIST",
+    text="Projet IA - CNN entraînés sur MNIST et EMNIST Letters",
     font=("Arial", 15)
 )
 subtitle.pack()
@@ -91,7 +133,6 @@ canvas = tk.Canvas(
     highlightbackground="#1F6AA5"
 )
 canvas.pack(padx=20, pady=10)
-
 canvas.bind("<B1-Motion>", dessiner)
 
 button_row = ctk.CTkFrame(left, fg_color="transparent")
@@ -137,7 +178,7 @@ label_resultat.pack(pady=5)
 
 label_message = ctk.CTkLabel(
     right,
-    text="Dessinez un chiffre de 0 à 9",
+    text="Dessinez un chiffre ou une lettre",
     font=("Arial", 20)
 )
 label_message.pack(pady=10)
@@ -160,7 +201,7 @@ ctk.CTkLabel(
 
 ctk.CTkLabel(
     info,
-    text="Type : CNN\nBase : MNIST\nClasses : 0 à 9\nPrécision finale : 99.17%",
+    text="Modèles : CNN\nBases : MNIST + EMNIST Letters\nClasses : 0 à 9 et A à Z\nPrécision chiffres : 99.17%\nPrécision lettres : 92.43%",
     font=("Arial", 16),
     justify="left"
 ).pack(pady=(5, 15))
